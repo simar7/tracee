@@ -19,8 +19,8 @@ import (
 	"github.com/aquasecurity/tracee/tracee/external"
 )
 
-// TraceeConfig is a struct containing user defined configuration of tracee
-type TraceeConfig struct {
+// Config is a struct containing user defined configuration of tracee
+type Config struct {
 	Filter                *Filter
 	DetectOriginalSyscall bool
 	ShowExecEnv           bool
@@ -87,7 +87,7 @@ type ArgFilterVal struct {
 }
 
 // Validate does static validation of the configuration
-func (tc TraceeConfig) Validate() error {
+func (tc Config) Validate() error {
 	if tc.Filter.EventsToTrace == nil {
 		return fmt.Errorf("eventsToTrace is nil")
 	}
@@ -100,7 +100,7 @@ func (tc TraceeConfig) Validate() error {
 		}
 	}
 	for eventID, eventFilters := range tc.Filter.ArgFilter.Filters {
-		for argName, _ := range eventFilters {
+		for argName := range eventFilters {
 			eventParams, ok := EventsIDToParams[eventID]
 			if !ok {
 				return fmt.Errorf("invalid argument filter event id: %d", eventID)
@@ -129,7 +129,7 @@ func (tc TraceeConfig) Validate() error {
 	}
 	for _, filter := range tc.FilterFileWrite {
 		if len(filter) > 64 {
-			return fmt.Errorf("The length of a path filter is limited to 64 characters: %s", filter)
+			return fmt.Errorf("the length of a path filter is limited to 64 characters: %s", filter)
 		}
 	}
 	_, err := os.Stat(tc.BPFObjPath)
@@ -141,7 +141,7 @@ func (tc TraceeConfig) Validate() error {
 
 // Tracee traces system calls and system events using eBPF
 type Tracee struct {
-	config            TraceeConfig
+	config            Config
 	eventsToTrace     map[int32]bool
 	bpfModule         *bpf.Module
 	eventsPerfMap     *bpf.PerfBuffer
@@ -181,8 +181,8 @@ type statsStore struct {
 	lostWrCounter counter
 }
 
-// New creates a new Tracee instance based on a given valid TraceeConfig
-func New(cfg TraceeConfig) (*Tracee, error) {
+// New creates a new Tracee instance based on a given valid Config
+func New(cfg Config) (*Tracee, error) {
 	var err error
 
 	err = cfg.Validate()
@@ -353,17 +353,17 @@ func supportRawTP() (bool, error) {
 	if ver == "" {
 		return false, fmt.Errorf("could not determine current release")
 	}
-	ver_split := strings.Split(ver, ".")
-	if len(ver_split) < 2 {
+	verSplit := strings.Split(ver, ".")
+	if len(verSplit) < 2 {
 		return false, fmt.Errorf("invalid version returned by uname")
 	}
-	major, err := strconv.Atoi(ver_split[0])
+	major, err := strconv.Atoi(verSplit[0])
 	if err != nil {
-		return false, fmt.Errorf("invalid major number: %s", ver_split[0])
+		return false, fmt.Errorf("invalid major number: %s", verSplit[0])
 	}
-	minor, err := strconv.Atoi(ver_split[1])
+	minor, err := strconv.Atoi(verSplit[1])
 	if err != nil {
-		return false, fmt.Errorf("invalid minor number: %s", ver_split[1])
+		return false, fmt.Errorf("invalid minor number: %s", verSplit[1])
 	}
 	if ((major == 4) && (minor >= 17)) || (major > 4) {
 		return true, nil
@@ -581,19 +581,19 @@ func (t *Tracee) populateBPFMaps() error {
 	if err != nil {
 		return fmt.Errorf("error getting BPF program trace_ret_vfs_write_tail: %v", err)
 	}
-	bpfProgArrayMap.Update(uint32(tailVfsWrite), uint32(prog.GetFd()))
+	bpfProgArrayMap.Update(tailVfsWrite, uint32(prog.GetFd()))
 
 	prog, err = t.bpfModule.GetProgram("trace_ret_vfs_writev_tail")
 	if err != nil {
 		return fmt.Errorf("error getting BPF program trace_ret_vfs_writev_tail: %v", err)
 	}
-	bpfProgArrayMap.Update(uint32(tailVfsWritev), uint32(prog.GetFd()))
+	bpfProgArrayMap.Update(tailVfsWritev, uint32(prog.GetFd()))
 
 	prog, err = t.bpfModule.GetProgram("send_bin")
 	if err != nil {
 		return fmt.Errorf("error getting BPF program send_bin: %v", err)
 	}
-	bpfProgArrayMap.Update(uint32(tailSendBin), uint32(prog.GetFd()))
+	bpfProgArrayMap.Update(tailSendBin, uint32(prog.GetFd()))
 
 	// Set filters given by the user to filter file write events
 	fileFilterMap, _ := t.bpfModule.GetMap("file_filter")
@@ -708,7 +708,7 @@ func (t *Tracee) initBPF(bpfObjectPath string) error {
 
 	supportRawTracepoints, err := supportRawTP()
 	if err != nil {
-		return fmt.Errorf("Failed to find kernel version: %v", err)
+		return fmt.Errorf("failed to find kernel version: %v", err)
 	}
 
 	// BPFLoadObject() automatically loads ALL BPF programs according to their section type, unless set otherwise
@@ -752,7 +752,7 @@ func (t *Tracee) initBPF(bpfObjectPath string) error {
 		return err
 	}
 
-	for e, _ := range t.eventsToTrace {
+	for e := range t.eventsToTrace {
 		event, ok := EventsIDToEvent[e]
 		if !ok {
 			continue
@@ -1041,8 +1041,8 @@ func (t *Tracee) prepareArgsForPrint(ctx *context, args map[argTag]interface{}) 
 			}
 		}
 		if ctx.EventID == CapCapableEventID {
-			if cap, isInt32 := args[t.EncParamName[ctx.EventID%2]["cap"]].(int32); isInt32 {
-				args[t.EncParamName[ctx.EventID%2]["cap"]] = PrintCapability(cap)
+			if capability, isInt32 := args[t.EncParamName[ctx.EventID%2]["cap"]].(int32); isInt32 {
+				args[t.EncParamName[ctx.EventID%2]["cap"]] = PrintCapability(capability)
 			}
 		}
 	case MmapEventID, MprotectEventID, PkeyMprotectEventID:
@@ -1249,13 +1249,13 @@ func (t *Tracee) processFileWrites() {
 				continue
 			}
 			if appendFile {
-				if _, err := f.Seek(0, os.SEEK_END); err != nil {
+				if _, err := f.Seek(0, io.SeekEnd); err != nil {
 					f.Close()
 					t.handleError(err)
 					continue
 				}
 			} else {
-				if _, err := f.Seek(int64(meta.Off), os.SEEK_SET); err != nil {
+				if _, err := f.Seek(int64(meta.Off), io.SeekStart); err != nil {
 					f.Close()
 					t.handleError(err)
 					continue

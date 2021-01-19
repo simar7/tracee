@@ -40,7 +40,7 @@ func main() {
 				return nil
 			}
 
-			cfg := tracee.TraceeConfig{
+			cfg := tracee.Config{
 				DetectOriginalSyscall: c.Bool("detect-original-syscall"),
 				ShowExecEnv:           c.Bool("show-exec-env"),
 				OutputFormat:          c.String("output"),
