@@ -216,12 +216,21 @@ type PerfBuffer struct {
 // By default, this limit is very low - increase to avoid failures
 func bumpMemlockRlimit() error {
 	var rLimit syscall.Rlimit
-	rLimit.Max = 512 << 20 /* 512 MBs */
-	rLimit.Cur = 512 << 20 /* 512 MBs */
+	rLimit.Max = 4096 << 20 /* 4096 MBs */
+	rLimit.Cur = 4096 << 20 /* 4096 MBs */
 	err := syscall.Setrlimit(C.RLIMIT_MEMLOCK, &rLimit)
 	if err != nil {
 		fmt.Errorf("error setting rlimit: %v", err)
 	}
+	
+       var rLimitTemp syscall.Rlimit
+       err := syscall.Getrlimit(C.RLIMIT_MEMLOCK, &rLimitTemp)
+       if err != nil {
+               fmt.Println("unable to get rlimit: ", err)
+       } else {
+               fmt.Println(">>>> rLimitTemp.Max = ", rLimitTemp.Max)
+               fmt.Println(">>>> rLimitTemp.Cur = ", rLimitTemp.Cur)
+       }
 	return nil
 }
 
