@@ -224,7 +224,7 @@ func bumpMemlockRlimit() error {
 	}
 	
        var rLimitTemp syscall.Rlimit
-       err := syscall.Getrlimit(C.RLIMIT_MEMLOCK, &rLimitTemp)
+       err = syscall.Getrlimit(C.RLIMIT_MEMLOCK, &rLimitTemp)
        if err != nil {
                fmt.Println("unable to get rlimit: ", err)
        } else {
