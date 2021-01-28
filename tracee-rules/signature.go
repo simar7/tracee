@@ -1,4 +1,4 @@
-package signatures
+package main
 
 import (
 	"fmt"
@@ -44,6 +44,7 @@ func GetSignatures(rulesDir string, rules []string) ([]types.Signature, error) {
 	return res, nil
 }
 
+// TODO: Use filepath.Walk() to recursively scan
 func findGoSigs(dir string) ([]types.Signature, error) {
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
@@ -70,6 +71,7 @@ func findGoSigs(dir string) ([]types.Signature, error) {
 	return res, nil
 }
 
+// TODO: Use filepath.Walk() to recursively scan
 func findOPASigs(dir string) ([]types.Signature, error) {
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
