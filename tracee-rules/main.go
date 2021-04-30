@@ -66,9 +66,24 @@ func main() {
 			if err != nil {
 				return err
 			}
+
+			defer opts.traceeInputFile.Close() // TODO: What if it's stdin?
 			inputs.Tracee, err = setupTraceeInputSource(opts)
 			if err != nil {
 				return err
+			}
+
+			// wire up to receive file descriptor of tracee profile
+			if len(c.StringSlice("tracee-profile")) > 0 {
+				pOpts, err := parseTraceeInputOptions(c.StringSlice("tracee-profile"))
+				if err == errHelp {
+					printHelp()
+					return nil
+				}
+				inputs.Profiler, err = setupProfilerInputSource(pOpts)
+				if err != nil {
+					return err
+				}
 			}
 
 			if inputs == (engine.EventSources{}) {
@@ -111,6 +126,10 @@ func main() {
 			&cli.StringSliceFlag{
 				Name:  "input-tracee",
 				Usage: "configure tracee-ebpf as input source. see '--input-tracee help' for more info",
+			},
+			&cli.StringSliceFlag{
+				Name:  "tracee-profile",
+				Usage: "run tracee-rules in profiler mode. see '--input-tracee help' for more info", // TODO: Improve help
 			},
 			&cli.StringFlag{
 				Name:  "output-template",

@@ -18,7 +18,7 @@ func TestParseTraceeInputOptions(t *testing.T) {
 	testCases := []struct {
 		testName              string
 		optionStringSlice     []string
-		expectedResultOptions *traceeInputOptions
+		expectedResultOptions *inputOptions
 		expectedError         error
 	}{
 		{
@@ -150,7 +150,7 @@ func TestSetupTraceeJSONInputSource(t *testing.T) {
 			}
 
 			// Set up reading from the file
-			opts := &traceeInputOptions{inputFile: f, inputFormat: jsonInputFormat}
+			opts := &inputOptions{traceeInputFile: f, traceeInputFormat: jsonInputFormat}
 			eventsChan, err := setupTraceeJSONInputSource(opts)
 			assert.Equal(t, testCase.expectedError, err)
 
@@ -241,7 +241,7 @@ func TestSetupTraceeGobInputSource(t *testing.T) {
 			f.Seek(0, io.SeekStart)
 
 			// Set up reading from the file
-			opts := &traceeInputOptions{inputFile: f, inputFormat: gobInputFormat}
+			opts := &inputOptions{traceeInputFile: f, traceeInputFormat: gobInputFormat}
 			eventsChan, err := setupTraceeGobInputSource(opts)
 			assert.Equal(t, testCase.expectedError, err)
 

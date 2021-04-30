@@ -15,11 +15,13 @@ type Engine struct {
 	signaturesIndex map[types.SignatureEventSelector][]types.Signature
 	inputs          EventSources
 	output          chan types.Finding
+	profilerMode    bool
 }
 
 //EventSources is a bundle of input sources used to configure the Engine
 type EventSources struct {
-	Tracee chan types.Event
+	Tracee   chan types.Event
+	Profiler chan types.Event
 }
 
 // NewEngine creates a new rules-engine with the given arguments
@@ -58,6 +60,11 @@ func NewEngine(sigs []types.Signature, sources EventSources, output chan types.F
 			engine.logger.Printf("error initializing signature %s: %v", meta.Name, err)
 			continue
 		}
+	}
+
+	// if profiler is setup then turn on profiler mode
+	if sources.Profiler != nil {
+		engine.profilerMode = true
 	}
 	return &engine
 }
@@ -110,15 +117,29 @@ func (engine *Engine) consumeSources(done <-chan bool) {
 				}
 				engine.inputs.Tracee = nil
 			} else if event != nil {
-				for _, s := range engine.signaturesIndex[types.SignatureEventSelector{Source: "tracee", Name: event.(tracee.Event).EventName}] {
-					engine.signatures[s] <- event
-				}
-				for _, s := range engine.signaturesIndex[types.SignatureEventSelector{Source: "tracee", Name: "*"}] {
-					engine.signatures[s] <- event
+				if engine.profilerMode {
+					//log.Fatal("win!")
+					// TODO: Read events from profiled data and compare the two events
+
+					//select {
+					//case event, _ := <-engine.inputs.Profiler:
+					//	log.Println("event: ", event)
+					//}
+				} else {
+					engine.dispatchEvent(event)
 				}
 			}
 		case <-done:
 			return
 		}
+	}
+}
+
+func (engine *Engine) dispatchEvent(event types.Event) {
+	for _, s := range engine.signaturesIndex[types.SignatureEventSelector{Source: "tracee", Name: event.(tracee.Event).EventName}] {
+		engine.signatures[s] <- event
+	}
+	for _, s := range engine.signaturesIndex[types.SignatureEventSelector{Source: "tracee", Name: "*"}] {
+		engine.signatures[s] <- event
 	}
 }

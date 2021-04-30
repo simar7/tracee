@@ -25,26 +25,35 @@ const (
 	gobInputFormat
 )
 
-type traceeInputOptions struct {
-	inputFile   *os.File
-	inputFormat inputFormat
+type inputOptions struct {
+	traceeInputFile     *os.File
+	traceeInputFormat   inputFormat
+	profilerInputFile   *os.File
+	profilerInputFormat inputFormat
 }
 
-func setupTraceeInputSource(opts *traceeInputOptions) (chan types.Event, error) {
-
-	if opts.inputFormat == jsonInputFormat {
-		return setupTraceeJSONInputSource(opts)
+func setupProfilerInputSource(opts *inputOptions) (chan types.Event, error) {
+	if opts.traceeInputFormat == jsonInputFormat {
+		return setupTraceeJSONInputSource(opts.profilerInputFile)
 	}
 
-	if opts.inputFormat == gobInputFormat {
-		return setupTraceeGobInputSource(opts)
-	}
-
-	return nil, errors.New("could not set up input source")
+	return nil, fmt.Errorf("unsupported profiler file format: %s", opts.profilerInputFormat)
 }
 
-func setupTraceeGobInputSource(opts *traceeInputOptions) (chan types.Event, error) {
-	dec := gob.NewDecoder(opts.inputFile)
+func setupTraceeInputSource(opts *inputOptions) (chan types.Event, error) {
+	if opts.traceeInputFormat == jsonInputFormat {
+		return setupTraceeJSONInputSource(opts.traceeInputFile)
+	}
+
+	if opts.traceeInputFormat == gobInputFormat {
+		return setupTraceeGobInputSource(opts) // TODO: Update to take io.Reader
+	}
+
+	return nil, errors.New("invalid or missing input format. See --input-tracee help for details")
+}
+
+func setupTraceeGobInputSource(opts *inputOptions) (chan types.Event, error) {
+	dec := gob.NewDecoder(opts.traceeInputFile)
 	res := make(chan types.Event)
 	go func() {
 		for {
@@ -60,15 +69,15 @@ func setupTraceeGobInputSource(opts *traceeInputOptions) (chan types.Event, erro
 				res <- event
 			}
 		}
-		opts.inputFile.Close()
+		opts.traceeInputFile.Close()
 		close(res)
 	}()
 	return res, nil
 }
 
-func setupTraceeJSONInputSource(opts *traceeInputOptions) (chan types.Event, error) {
+func setupTraceeJSONInputSource(inputFile io.Reader) (chan types.Event, error) {
 	res := make(chan types.Event)
-	scanner := bufio.NewScanner(opts.inputFile)
+	scanner := bufio.NewScanner(inputFile)
 	go func() {
 		for scanner.Scan() {
 			event := scanner.Bytes()
@@ -79,31 +88,30 @@ func setupTraceeJSONInputSource(opts *traceeInputOptions) (chan types.Event, err
 			}
 			res <- e
 		}
-		opts.inputFile.Close()
 		close(res)
 	}()
 	return res, nil
 }
 
-func parseTraceeInputOptions(inputOptions []string) (*traceeInputOptions, error) {
+func parseTraceeInputOptions(inputOpts []string) (*inputOptions, error) {
 
 	var (
-		inputSourceOptions traceeInputOptions
+		inputSourceOptions inputOptions
 		err                error
 	)
 
-	if len(inputOptions) == 0 {
+	if len(inputOpts) == 0 {
 		return nil, errors.New("no tracee input options specified")
 	}
 
-	for i := range inputOptions {
-		if inputOptions[i] == "help" {
+	for i := range inputOpts {
+		if inputOpts[i] == "help" {
 			return nil, errHelp
 		}
 
-		kv := strings.Split(inputOptions[i], ":")
+		kv := strings.Split(inputOpts[i], ":")
 		if len(kv) != 2 {
-			return nil, fmt.Errorf("invalid input-tracee option: %s", inputOptions[i])
+			return nil, fmt.Errorf("invalid input-tracee option: %s", inputOpts[i])
 		}
 		if kv[0] == "" || kv[1] == "" {
 			return nil, fmt.Errorf("empty key or value passed: key: >%s< value: >%s<", kv[0], kv[1])
@@ -125,10 +133,10 @@ func parseTraceeInputOptions(inputOptions []string) (*traceeInputOptions, error)
 	return &inputSourceOptions, nil
 }
 
-func parseTraceeInputFile(option *traceeInputOptions, fileOpt string) error {
+func parseTraceeInputFile(option *inputOptions, fileOpt string) error {
 
 	if fileOpt == "stdin" {
-		option.inputFile = os.Stdin
+		option.traceeInputFile = os.Stdin
 		return nil
 	}
 	_, err := os.Stat(fileOpt)
@@ -139,19 +147,19 @@ func parseTraceeInputFile(option *traceeInputOptions, fileOpt string) error {
 	if err != nil {
 		return fmt.Errorf("invalid file: %s", fileOpt)
 	}
-	option.inputFile = f
+	option.traceeInputFile = f
 	return nil
 }
 
-func parseTraceeInputFormat(option *traceeInputOptions, formatString string) error {
+func parseTraceeInputFormat(option *inputOptions, formatString string) error {
 	formatString = strings.ToUpper(formatString)
 
 	if formatString == "JSON" {
-		option.inputFormat = jsonInputFormat
+		option.traceeInputFormat = jsonInputFormat
 	} else if formatString == "GOB" {
-		option.inputFormat = gobInputFormat
+		option.traceeInputFormat = gobInputFormat
 	} else {
-		option.inputFormat = invalidInputFormat
+		option.traceeInputFormat = invalidInputFormat
 		return fmt.Errorf("invalid tracee input format specified: %s", formatString)
 	}
 	return nil
