@@ -58,7 +58,7 @@ func main() {
 			}
 
 			var inputs engine.EventSources
-			opts, err := parseTraceeInputOptions(c.StringSlice("input-tracee"))
+			opts, err := parseTraceeInputOptions(c.StringSlice("input-tracee"), "tracee")
 			if err == errHelp {
 				printHelp()
 				return nil
@@ -75,11 +75,12 @@ func main() {
 
 			// wire up to receive file descriptor of tracee profile
 			if len(c.StringSlice("tracee-profile")) > 0 {
-				pOpts, err := parseTraceeInputOptions(c.StringSlice("tracee-profile"))
+				pOpts, err := parseTraceeInputOptions(c.StringSlice("tracee-profile"), "profiler")
 				if err == errHelp {
 					printHelp()
 					return nil
 				}
+
 				inputs.Profiler, err = setupProfilerInputSource(pOpts)
 				if err != nil {
 					return err

@@ -33,7 +33,7 @@ type inputOptions struct {
 }
 
 func setupProfilerInputSource(opts *inputOptions) (chan types.Event, error) {
-	if opts.traceeInputFormat == jsonInputFormat {
+	if opts.profilerInputFormat == jsonInputFormat {
 		return setupTraceeJSONInputSource(opts.profilerInputFile)
 	}
 
@@ -93,8 +93,7 @@ func setupTraceeJSONInputSource(inputFile io.Reader) (chan types.Event, error) {
 	return res, nil
 }
 
-func parseTraceeInputOptions(inputOpts []string) (*inputOptions, error) {
-
+func parseTraceeInputOptions(inputOpts []string, fileType string) (*inputOptions, error) {
 	var (
 		inputSourceOptions inputOptions
 		err                error
@@ -117,12 +116,12 @@ func parseTraceeInputOptions(inputOpts []string) (*inputOptions, error) {
 			return nil, fmt.Errorf("empty key or value passed: key: >%s< value: >%s<", kv[0], kv[1])
 		}
 		if kv[0] == "file" {
-			err = parseTraceeInputFile(&inputSourceOptions, kv[1])
+			err = parseTraceeInputFile(&inputSourceOptions, kv[1], fileType)
 			if err != nil {
 				return nil, err
 			}
 		} else if kv[0] == "format" {
-			err = parseTraceeInputFormat(&inputSourceOptions, kv[1])
+			err = parseTraceeInputFormat(&inputSourceOptions, kv[1], fileType)
 			if err != nil {
 				return nil, err
 			}
@@ -133,34 +132,52 @@ func parseTraceeInputOptions(inputOpts []string) (*inputOptions, error) {
 	return &inputSourceOptions, nil
 }
 
-func parseTraceeInputFile(option *inputOptions, fileOpt string) error {
+func parseTraceeInputFile(option *inputOptions, fileOpt string, fileType string) error {
 
 	if fileOpt == "stdin" {
-		option.traceeInputFile = os.Stdin
+		switch fileType {
+		case "tracee":
+			option.traceeInputFile = os.Stdin
+		case "profiler":
+			option.profilerInputFile = os.Stdin
+		}
 		return nil
 	}
 	_, err := os.Stat(fileOpt)
 	if err != nil {
-		return fmt.Errorf("invalid Tracee input file: %s", fileOpt)
+		return fmt.Errorf("invalid %s input file: %s", fileType, fileOpt)
 	}
 	f, err := os.Open(fileOpt)
 	if err != nil {
 		return fmt.Errorf("invalid file: %s", fileOpt)
 	}
-	option.traceeInputFile = f
+	switch fileType {
+	case "tracee":
+		option.traceeInputFile = f
+	case "profiler":
+		option.profilerInputFile = f
+	}
 	return nil
 }
 
-func parseTraceeInputFormat(option *inputOptions, formatString string) error {
+func parseTraceeInputFormat(option *inputOptions, formatString string, fileType string) error {
 	formatString = strings.ToUpper(formatString)
+	var fileFormat inputFormat
 
 	if formatString == "JSON" {
-		option.traceeInputFormat = jsonInputFormat
+		fileFormat = jsonInputFormat
 	} else if formatString == "GOB" {
-		option.traceeInputFormat = gobInputFormat
+		fileFormat = gobInputFormat
 	} else {
-		option.traceeInputFormat = invalidInputFormat
+		fileFormat = invalidInputFormat
 		return fmt.Errorf("invalid tracee input format specified: %s", formatString)
+	}
+
+	switch fileType {
+	case "tracee":
+		option.traceeInputFormat = fileFormat
+	case "profiler":
+		option.profilerInputFormat = fileFormat
 	}
 	return nil
 }

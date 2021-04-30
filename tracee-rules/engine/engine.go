@@ -4,6 +4,8 @@ import (
 	"io"
 	"log"
 
+	"github.com/davecgh/go-spew/spew"
+
 	tracee "github.com/aquasecurity/tracee/tracee-ebpf/tracee/external"
 	"github.com/aquasecurity/tracee/tracee-rules/types"
 )
@@ -98,6 +100,16 @@ func (engine *Engine) matchHandler(res types.Finding) {
 // consumeSources starts consuming the input sources
 // it runs continuously until stopped by the done channel
 func (engine *Engine) consumeSources(done <-chan bool) {
+	// collect all profiled events
+	var profileEvents []types.Event
+	for {
+		pe, open := <-engine.inputs.Profiler
+		if !open {
+			break
+		}
+		profileEvents = append(profileEvents, pe)
+	}
+
 	for {
 		select {
 		case event, ok := <-engine.inputs.Tracee:
@@ -118,13 +130,16 @@ func (engine *Engine) consumeSources(done <-chan bool) {
 				engine.inputs.Tracee = nil
 			} else if event != nil {
 				if engine.profilerMode {
-					//log.Fatal("win!")
 					// TODO: Read events from profiled data and compare the two events
+					for _, pe := range profileEvents {
+						if pe.(tracee.Event).EventName == event.(tracee.Event).EventName {
+							if pe.(tracee.Event).ProcessName != event.(tracee.Event).ProcessName {
+								spew.Dump(event.(tracee.Event))
+								log.Fatal("unknown process detected!")
+							}
 
-					//select {
-					//case event, _ := <-engine.inputs.Profiler:
-					//	log.Println("event: ", event)
-					//}
+						}
+					}
 				} else {
 					engine.dispatchEvent(event)
 				}
