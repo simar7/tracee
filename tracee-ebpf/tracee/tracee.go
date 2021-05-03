@@ -2,7 +2,9 @@ package tracee
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -194,6 +196,7 @@ type Tracee struct {
 		mountNS   uint32
 		timeStamp int64
 		times     int64
+		sha       string
 	}
 	writtenFiles      map[string]string
 	mntNsFirstPid     map[uint32]uint32
@@ -327,6 +330,7 @@ func New(cfg Config) (*Tracee, error) {
 		mountNS   uint32
 		timeStamp int64
 		times     int64
+		sha       string
 	})
 	//set a default value for config.maxPidsCache
 	if t.config.maxPidsCache == 0 {
@@ -893,9 +897,9 @@ func (t *Tracee) Run() error {
 	if t.config.Profile && t.config.Capture.Exec {
 		fmt.Println("---Summary of Profiled Events---")
 		table := tablewriter.NewWriter(os.Stdout)
-		table.SetHeader([]string{"Mount NS", "File", "Change Time", "Execution Count"})
+		table.SetHeader([]string{"Mount NS", "File", "Change Time", "SHA256", "Execution Count"})
 		for fileName, info := range t.profiledFiles {
-			table.Append([]string{strconv.Itoa(int(info.mountNS)), fileName, strconv.FormatInt(info.timeStamp, 10), strconv.FormatInt(info.times, 10)})
+			table.Append([]string{strconv.Itoa(int(info.mountNS)), fileName, strconv.FormatInt(info.timeStamp, 10), info.sha, strconv.FormatInt(info.times, 10)})
 		}
 		table.Render()
 	}
@@ -1114,20 +1118,32 @@ func (t *Tracee) processEvent(ctx *context, args map[argTag]interface{}) error {
 
 				// create an in-memory profile
 				if t.config.Profile {
+					sourceFileSHA := ""
+					f, _ := os.Open(sourceFilePath)
+					if f != nil {
+						defer f.Close()
+						h := sha256.New()
+						_, _ = io.Copy(h, f)
+						sourceFileSHA = hex.EncodeToString(h.Sum(nil))
+					}
+
 					if pf, ok := t.profiledFiles[sourceFilePath]; !ok {
 						t.profiledFiles[sourceFilePath] = struct {
 							mountNS   uint32
 							timeStamp int64
 							times     int64
+							sha       string
 						}{
 							mountNS:   ctx.MntID,
 							timeStamp: sourceFileCtime,
 							times:     1,
+							sha:       sourceFileSHA,
 						}
 					} else {
-						pf.timeStamp = sourceFileCtime
-						pf.times = pf.times + 1
+						pf.timeStamp = sourceFileCtime // update ctime
+						pf.times = pf.times + 1        // bump execution count
 						pf.mountNS = ctx.MntID
+						pf.sha = sourceFileSHA
 						t.profiledFiles[sourceFilePath] = pf // update
 					}
 				}
