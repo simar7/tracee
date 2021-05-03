@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"github.com/olekukonko/tablewriter"
+
 	bpf "github.com/aquasecurity/tracee/libbpfgo"
 	"github.com/aquasecurity/tracee/libbpfgo/helpers"
 )
@@ -23,6 +25,7 @@ import (
 type Config struct {
 	Filter             *Filter
 	Capture            *CaptureConfig
+	Profile            bool
 	Output             *OutputConfig
 	PerfBufferSize     int
 	BlobPerfBufferSize int
@@ -175,18 +178,23 @@ func (tc Config) Validate() error {
 
 // Tracee traces system calls and system events using eBPF
 type Tracee struct {
-	config            Config
-	eventsToTrace     map[int32]bool
-	bpfModule         *bpf.Module
-	eventsPerfMap     *bpf.PerfBuffer
-	fileWrPerfMap     *bpf.PerfBuffer
-	eventsChannel     chan []byte
-	fileWrChannel     chan []byte
-	lostEvChannel     chan uint64
-	lostWrChannel     chan uint64
-	printer           eventPrinter
-	stats             statsStore
-	capturedFiles     map[string]int64
+	config        Config
+	eventsToTrace map[int32]bool
+	bpfModule     *bpf.Module
+	eventsPerfMap *bpf.PerfBuffer
+	fileWrPerfMap *bpf.PerfBuffer
+	eventsChannel chan []byte
+	fileWrChannel chan []byte
+	lostEvChannel chan uint64
+	lostWrChannel chan uint64
+	printer       eventPrinter
+	stats         statsStore
+	capturedFiles map[string]int64
+	profiledFiles map[string]struct {
+		mountNS   uint32
+		timeStamp int64
+		times     int64
+	}
 	writtenFiles      map[string]string
 	mntNsFirstPid     map[uint32]uint32
 	DecParamName      [2]map[argTag]string
@@ -315,6 +323,11 @@ func New(cfg Config) (*Tracee, error) {
 
 	t.writtenFiles = make(map[string]string)
 	t.capturedFiles = make(map[string]int64)
+	t.profiledFiles = make(map[string]struct {
+		mountNS   uint32
+		timeStamp int64
+		times     int64
+	})
 	//set a default value for config.maxPidsCache
 	if t.config.maxPidsCache == 0 {
 		t.config.maxPidsCache = 5
@@ -877,6 +890,16 @@ func (t *Tracee) Run() error {
 	t.fileWrPerfMap.Stop()
 	t.printer.Epilogue(t.stats)
 
+	if t.config.Profile && t.config.Capture.Exec {
+		fmt.Println("---Summary of Profiled Events---")
+		table := tablewriter.NewWriter(os.Stdout)
+		table.SetHeader([]string{"Mount NS", "File", "Change Time", "Execution Count"})
+		for fileName, info := range t.profiledFiles {
+			table.Append([]string{strconv.Itoa(int(info.mountNS)), fileName, strconv.FormatInt(info.timeStamp, 10), strconv.FormatInt(info.times, 10)})
+		}
+		table.Render()
+	}
+
 	// record index of written files
 	if t.config.Capture.FileWrite {
 		destinationFilePath := filepath.Join(t.config.Capture.OutputPath, "written_files")
@@ -1085,9 +1108,31 @@ func (t *Tracee) processEvent(ctx *context, args map[argTag]interface{}) error {
 					//TODO: remove dead pid from cache
 					continue
 				}
-				//don't capture same file twice unless it was modified
+
 				sourceFileCtime := sourceFileStat.Sys().(*syscall.Stat_t).Ctim.Nano()
 				capturedFileID := fmt.Sprintf("%d:%s", ctx.MntID, sourceFilePath)
+
+				// create an in-memory profile
+				if t.config.Profile {
+					if pf, ok := t.profiledFiles[sourceFilePath]; !ok {
+						t.profiledFiles[sourceFilePath] = struct {
+							mountNS   uint32
+							timeStamp int64
+							times     int64
+						}{
+							mountNS:   ctx.MntID,
+							timeStamp: sourceFileCtime,
+							times:     1,
+						}
+					} else {
+						pf.timeStamp = sourceFileCtime
+						pf.times = pf.times + 1
+						pf.mountNS = ctx.MntID
+						t.profiledFiles[sourceFilePath] = pf // update
+					}
+				}
+
+				//don't capture same file twice unless it was modified
 				lastCtime, ok := t.capturedFiles[capturedFileID]
 				if ok && lastCtime == sourceFileCtime {
 					return nil

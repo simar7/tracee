@@ -60,6 +60,7 @@ func main() {
 				return err
 			}
 			cfg.Filter = &filter
+			cfg.Profile = c.Bool("profile")
 
 			if c.Bool("security-alerts") {
 				cfg.Filter.EventsToTrace = append(cfg.Filter.EventsToTrace, tracee.MemProtAlertEventID)
@@ -100,6 +101,11 @@ func main() {
 				Aliases: []string{"c"},
 				Value:   nil,
 				Usage:   "capture artifacts that were written, executed or found to be suspicious. run '--capture help' for more info.",
+			},
+			&cli.BoolFlag{
+				Name:    "profile",
+				Aliases: []string{"pf"},
+				Usage:   "profile executed artifacts that are captured with '--capture' flag",
 			},
 			&cli.StringSliceFlag{
 				Name:    "output",
