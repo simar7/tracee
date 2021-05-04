@@ -61,6 +61,9 @@ func main() {
 			}
 			cfg.Filter = &filter
 			cfg.Profile = c.Bool("profile")
+			cfg.CompareProfilePath = c.String("compare-profile-path")
+			cfg.FailOnDiff = c.Bool("fail-on-diff")
+			cfg.SaveProfilePath = c.String("save-profile-path")
 
 			if c.Bool("security-alerts") {
 				cfg.Filter.EventsToTrace = append(cfg.Filter.EventsToTrace, tracee.MemProtAlertEventID)
@@ -106,6 +109,18 @@ func main() {
 				Name:    "profile",
 				Aliases: []string{"pf"},
 				Usage:   "profile executed artifacts that are captured with '--capture' flag",
+			},
+			&cli.StringFlag{
+				Name:  "compare-profile-path",
+				Usage: "compare an existing profile with current profile.",
+			},
+			&cli.BoolFlag{
+				Name:  "fail-on-diff",
+				Usage: "returns a non zero exit code if profiler finds difference",
+			},
+			&cli.StringFlag{
+				Name:  "save-profile-path",
+				Usage: "saves the current generated profile as a new profile",
 			},
 			&cli.StringSliceFlag{
 				Name:    "output",

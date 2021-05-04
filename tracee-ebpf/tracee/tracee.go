@@ -19,6 +19,7 @@ import (
 	"syscall"
 
 	"github.com/olekukonko/tablewriter"
+	"github.com/sergi/go-diff/diffmatchpatch"
 
 	bpf "github.com/aquasecurity/tracee/libbpfgo"
 	"github.com/aquasecurity/tracee/libbpfgo/helpers"
@@ -29,6 +30,9 @@ type Config struct {
 	Filter             *Filter
 	Capture            *CaptureConfig
 	Profile            bool
+	CompareProfilePath string
+	FailOnDiff         bool
+	SaveProfilePath    string
 	Output             *OutputConfig
 	PerfBufferSize     int
 	BlobPerfBufferSize int
@@ -893,16 +897,43 @@ func (t *Tracee) Run() error {
 	t.printer.Epilogue(t.stats)
 
 	if t.config.Profile && t.config.Capture.Exec {
-		fmt.Println("---Summary of Profiled Events---")
-		table := tablewriter.NewWriter(os.Stdout)
+		var actual bytes.Buffer
+		//table := tablewriter.NewWriter(os.Stdout)
+		table := tablewriter.NewWriter(&actual)
 		table.SetHeader([]string{"Mount NS", "File", "Change Time", "SHA256", "Execution Count"})
 
 		sortedProfileFiles := sortByTimestamp(t.profiledFiles)
-
 		for fileName, info := range sortedProfileFiles {
 			table.Append([]string{strconv.Itoa(int(info.mountNS)), fileName, strconv.FormatInt(info.timeStamp, 10), info.sha, strconv.FormatInt(info.times, 10)})
 		}
 		table.Render()
+
+		if t.config.SaveProfilePath != "" {
+			if err := os.WriteFile(t.config.SaveProfilePath, actual.Bytes(), 0644); err != nil {
+				fmt.Println("unable to write new profile to disk: ", err)
+			}
+			fmt.Println("profile saved in: ", t.config.SaveProfilePath)
+		}
+
+		if t.config.CompareProfilePath != "" {
+			expected, err := ioutil.ReadFile(t.config.CompareProfilePath)
+			if err != nil {
+				return fmt.Errorf("unable to read existing profile: %s", err)
+			}
+			dmp := diffmatchpatch.New()
+			profileDiff := dmp.DiffPrettyText(dmp.DiffMain(string(expected), actual.String(), false))
+			if profileDiff == "" {
+				fmt.Println("no differences found")
+			} else {
+				fmt.Println(profileDiff)
+				if t.config.FailOnDiff {
+					return fmt.Errorf("difference in execution found")
+				}
+			}
+		} else {
+			fmt.Println("---Summary of Profiled Events---")
+			fmt.Println(actual.String())
+		}
 	}
 
 	// record index of written files
