@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -178,26 +179,28 @@ func (tc Config) Validate() error {
 	return nil
 }
 
+type profilerInfo struct {
+	mountNS   uint32
+	timeStamp int64
+	times     int64
+	sha       string
+}
+
 // Tracee traces system calls and system events using eBPF
 type Tracee struct {
-	config        Config
-	eventsToTrace map[int32]bool
-	bpfModule     *bpf.Module
-	eventsPerfMap *bpf.PerfBuffer
-	fileWrPerfMap *bpf.PerfBuffer
-	eventsChannel chan []byte
-	fileWrChannel chan []byte
-	lostEvChannel chan uint64
-	lostWrChannel chan uint64
-	printer       eventPrinter
-	stats         statsStore
-	capturedFiles map[string]int64
-	profiledFiles map[string]struct {
-		mountNS   uint32
-		timeStamp int64
-		times     int64
-		sha       string
-	}
+	config            Config
+	eventsToTrace     map[int32]bool
+	bpfModule         *bpf.Module
+	eventsPerfMap     *bpf.PerfBuffer
+	fileWrPerfMap     *bpf.PerfBuffer
+	eventsChannel     chan []byte
+	fileWrChannel     chan []byte
+	lostEvChannel     chan uint64
+	lostWrChannel     chan uint64
+	printer           eventPrinter
+	stats             statsStore
+	capturedFiles     map[string]int64
+	profiledFiles     map[string]profilerInfo
 	writtenFiles      map[string]string
 	mntNsFirstPid     map[uint32]uint32
 	DecParamName      [2]map[argTag]string
@@ -326,12 +329,7 @@ func New(cfg Config) (*Tracee, error) {
 
 	t.writtenFiles = make(map[string]string)
 	t.capturedFiles = make(map[string]int64)
-	t.profiledFiles = make(map[string]struct {
-		mountNS   uint32
-		timeStamp int64
-		times     int64
-		sha       string
-	})
+	t.profiledFiles = make(map[string]profilerInfo)
 	//set a default value for config.maxPidsCache
 	if t.config.maxPidsCache == 0 {
 		t.config.maxPidsCache = 5
@@ -898,7 +896,10 @@ func (t *Tracee) Run() error {
 		fmt.Println("---Summary of Profiled Events---")
 		table := tablewriter.NewWriter(os.Stdout)
 		table.SetHeader([]string{"Mount NS", "File", "Change Time", "SHA256", "Execution Count"})
-		for fileName, info := range t.profiledFiles {
+
+		sortedProfileFiles := sortByTimestamp(t.profiledFiles)
+
+		for fileName, info := range sortedProfileFiles {
 			table.Append([]string{strconv.Itoa(int(info.mountNS)), fileName, strconv.FormatInt(info.timeStamp, 10), info.sha, strconv.FormatInt(info.times, 10)})
 		}
 		table.Render()
@@ -934,6 +935,28 @@ func (t *Tracee) Run() error {
 	close(done)
 	t.Close()
 	return nil
+}
+
+func sortByTimestamp(fileEvents map[string]profilerInfo) map[string]profilerInfo {
+
+	type Entry struct {
+		key   string
+		value profilerInfo
+	}
+
+	var sortedSlice []Entry
+	for k, v := range fileEvents {
+		sortedSlice = append(sortedSlice, Entry{k, v})
+	}
+	sort.Slice(sortedSlice, func(i, j int) bool {
+		return sortedSlice[i].value.timeStamp < sortedSlice[j].value.timeStamp
+	})
+
+	sortedProfilerEvents := make(map[string]profilerInfo)
+	for _, e := range sortedSlice {
+		sortedProfilerEvents[e.key] = e.value
+	}
+	return sortedProfilerEvents
 }
 
 // Close cleans up created resources
@@ -1128,12 +1151,7 @@ func (t *Tracee) processEvent(ctx *context, args map[argTag]interface{}) error {
 					}
 
 					if pf, ok := t.profiledFiles[sourceFilePath]; !ok {
-						t.profiledFiles[sourceFilePath] = struct {
-							mountNS   uint32
-							timeStamp int64
-							times     int64
-							sha       string
-						}{
+						t.profiledFiles[sourceFilePath] = profilerInfo{
 							mountNS:   ctx.MntID,
 							timeStamp: sourceFileCtime,
 							times:     1,
