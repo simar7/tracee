@@ -128,6 +128,10 @@ endif
 test-integration: $(OUT_BIN)
 	$(go_env) TRC_BIN=../../$(OUT_BIN) go test -exec 'sudo -E' -v test/integration/*_test.go
 
+.PHONY: test-integration
+test-benchmark:
+	cd test/benchmark && $(go_env) TRC_BIN=../../$(OUT_BIN) go test -exec 'sudo -E' -bench=. -benchmem -benchtime=1s -count=5
+
 # record built image id to prevent unnecessary building and for cleanup
 docker_builder_file := $(OUT_DIR)/$(DOCKER_BUILDER)
 .PHONY: $(DOCKER_BUILDER)
